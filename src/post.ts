@@ -63,6 +63,7 @@ export class PostGenerator {
   }
 
   private async autoGenerate () : Promise<Post> {
+    const {topic, enrichOutline} = this.helper.getPrompt();
     await oraPromise(
       this.helper.init(),
       {
@@ -76,6 +77,7 @@ export class PostGenerator {
         text: 'Generating post outline ...'
       }
     )
+    const tableOfContentEnriched = await enrichOutline(tableOfContent, topic)
 
     let content = await oraPromise(
       this.helper.generateIntroduction(),
@@ -85,7 +87,7 @@ export class PostGenerator {
     )
 
     content += await oraPromise(
-      this.helper.generateHeadingContents(tableOfContent),
+      this.helper.generateHeadingContents(tableOfContentEnriched),
       {
         text: 'Generating content ...'
       }
@@ -101,10 +103,10 @@ export class PostGenerator {
     }
 
     return {
-      title: tableOfContent.title,
-      slug: tableOfContent.slug,
-      seoTitle: tableOfContent.seoTitle,
-      seoDescription: tableOfContent.seoDescription,
+      title: tableOfContentEnriched.title,
+      slug: tableOfContentEnriched.slug,
+      seoTitle: tableOfContentEnriched.seoTitle,
+      seoDescription: tableOfContentEnriched.seoDescription,
       content,
       totalTokens: this.helper.getTotalTokens()
     }

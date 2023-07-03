@@ -21,6 +21,7 @@ export type PostPrompt = {
   debug? : boolean
   debugapi? : boolean
   apiKey? : string
+  enrichOutline? : (outline: any, str: string) => any;
 
   // The following attributes are only used for custom templates
   templateFile? : string
@@ -32,6 +33,7 @@ export type Heading = {
   title: string
   keywords?: string[]
   headings?: Heading[]
+  context?: string
 }
 
 export type PostOutline = {

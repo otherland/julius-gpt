@@ -1,15 +1,22 @@
 import { PostPrompt } from '../types'
 
-const STRUCTURE_OUTLINE = 'Generate the blog post outline with the following json format : ' +
-'{"title": "", // Add the post title here ' +
-'"headings" : [ { "title": "", //Add the heading title here ' +
-  '"keywords": ["...", "...", "...", "..."], // Add a list of keywords here. they will help to generate the final content of this heading.' +
-  '"headings": [ // If necessary, add subheadings here. This is optional' +
-    '{ "title": "", ' + '"keywords": ["...", "..."] },' +
-    '{ "title": "", "keywords": ["...", "..."] }, ... ] } ... ],' +
-'"slug" : "", // Use the main keywords for the slug based on the topic of the post. Do not mention the country.  Max 3 or 4 keywords, without stop words and with text normalization and accent stripping' +
-'"seoTitle" : "", // not the same as the post tile, max 60 characters, do not mention the country' +
-'"seoDescription : "" //max 155 characters }'
+const STRUCTURE_OUTLINE = `Generate a new blog post outline based on these HTML headings from the top 10 search engine results for the title "{{TITLE}}". Ensure that the outline covers the topic comprehensively. 
+
+Headings: {{SERP_RESULTS}}
+
+Return the outline in the following json format: {
+  "title": "{{TITLE}}",
+  "headings" : [ { "title": "", // Add headings in the form of questions
+    "keywords": ["...", "...", "...", "..."], // Add a list of keywords here to help to generate the final content of this title
+    "headings": [ // Add sub-headings in the form of questions
+      { "title": "", "keywords": ["...", "..."] },
+      { "title": "", "keywords": ["...", "..."] }, 
+    ... ] 
+  } ... ],
+  "slug" : "", // Use the main keywords for the slug based on the topic of the post with text normalization and accent stripping
+  "seoTitle" : "",
+  "seoDescription : ""
+}`
 
 const INFORMATIVE_INTRO_PROMPT = 'Compose the introduction for this blog post topic, without using phrases such as "In this article,..." to introduce the subject.' +
   'Instead, explain the context and/or explain the main problem. If possible, give some facts. Do not describe or introduce the content of the differents headings of the outline' +
@@ -45,8 +52,9 @@ export function getCustomSystemPrompt (postPrompt : PostPrompt) {
 }
 
 export function getPromptForOutline (postPrompt : PostPrompt) {
-  const { country, intent, audience } = postPrompt
-  const prompt = STRUCTURE_OUTLINE +
+  const { country, intent, audience, serp_results } = postPrompt
+  let outline = STRUCTURE_OUTLINE.replace('{{TITLE}}', postPrompt.topic).replace('{{SERP_RESULTS}}', serp_results);
+  const prompt = outline +
     'Do not add heading for an introduction, conclusion or to summarize the article.' +
     (country === null || country === 'none' ? '' : 'Market/country/region :' + country + '.') +
     (audience === null ? '' : 'Audience : ' + audience + '.') +
@@ -63,8 +71,8 @@ export function getPromptForIntroduction (postPrompt : PostPrompt) {
   return (!postPrompt.tone) || postPrompt.tone === 'informative' ? INFORMATIVE_INTRO_PROMPT : CAPTIVATING_INTO_PROMPT
 }
 
-export function getPromptForHeading (tone : string, title : string, keywords : string[] | null) {
-  return tone === 'informative' ? getPromptForInformativeHeading(title, keywords) : getPromptForCaptivatingHeading(title, keywords)
+export function getPromptForHeading (tone : string, title : string, keywords : string[] | null, context : string | null) {
+  return tone === 'informative' ? getPromptForInformativeHeading(title, keywords, context) : getPromptForCaptivatingHeading(title, keywords, context)
 }
 
 export function getPromptForConclusion () {
@@ -111,18 +119,19 @@ export function getPromptForSeoInfo (postPrompt : PostPrompt) {
   '{"seoTitle": "", "": "seoDescription": "", "slug": ""}'
 }
 
-function getPromptForInformativeHeading (title : string, keywords : string[] | null) {
-  const promptAboutKeywords = keywords ? ' based on the following list of keywords : ' + keywords.join(', ') + '.' : ''
-  return 'Write an informative content for the heading (without the heading) : "' + title + '"' + promptAboutKeywords +
+function getPromptForInformativeHeading (title : string, keywords : string[] | null, context : string | null) {
+  const promptAboutContext = context ? context + ' ' : ''
+  const promptAboutKeywords = keywords ? 'Keywords: ' + keywords.join(', ') + '.' : ''
+  return promptAboutKeywords + promptAboutContext + ' Write informative content for the heading (without the heading) : "' + title + '". ' +
     'Do not start the first sentence with the heading. Instead, start with a sentence that introduces and provides context for the heading.' +
     'Do not add a conclusion or a summary at the end of your answer. Your response should be in the markdown format.'
 }
 
-function getPromptForCaptivatingHeading (title : string, keywords : string[] | null) {
-  const promptAboutKeywords = keywords ? ' based on the following list of keywords : ' + keywords.join(', ') + '.' : ''
-
-  return 'Write an captivating content for the heading (without the heading) : "' + title + '"' + promptAboutKeywords +
-  'Ensure to providing in-depth information and valuable insights.Use clear and concise language, along with relevant examples or anecdotes, to engage the reader and enhance their understanding.' +
-  'Do not start the first sentence with the heading. Instead, start with a sentence that introduces and provides context for the heading.' +
+function getPromptForCaptivatingHeading (title : string, keywords : string[] | null, context : string | null) {
+  const promptAboutContext = context ? context + ' ' : ''
+  const promptAboutKeywords = keywords ? 'Keywords: ' + keywords.join(', ') + '.' : ''
+  return promptAboutKeywords + promptAboutContext + ' Write captivating content for the heading (without the heading) : "' + title + '". ' +
+  'Provide in-depth information and valuable insights. Use clear and concise language, along with relevant examples or anecdotes, to engage the reader and enhance their understanding. ' +
+  'Do not start the first sentence with the heading. Instead, start with a sentence that introduces and provides context for the heading. ' +
   'Do not add a conclusion or a summary at the end of your answer. Your response should be in the markdown format.'
 }
