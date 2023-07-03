@@ -52,10 +52,10 @@ export function getCustomSystemPrompt (postPrompt : PostPrompt) {
 }
 
 export function getPromptForOutline (postPrompt : PostPrompt) {
-  const { country, intent, audience, serp_results } = postPrompt
-  let outline = STRUCTURE_OUTLINE.replace('{{TITLE}}', postPrompt.topic).replace('{{SERP_RESULTS}}', serp_results);
+  const { country, intent, audience, serp_outlines } = postPrompt
+  const outline = STRUCTURE_OUTLINE.replaceAll('{{TITLE}}', postPrompt.topic).replaceAll('{{SERP_RESULTS}}', serp_outlines);
   const prompt = outline +
-    'Do not add heading for an introduction, conclusion or to summarize the article.' +
+    ' Do not add heading for an introduction, conclusion or to summarize the article.' +
     (country === null || country === 'none' ? '' : 'Market/country/region :' + country + '.') +
     (audience === null ? '' : 'Audience : ' + audience + '.') +
     (intent === null ? '' : 'Content intent : ' + intent + '.')
