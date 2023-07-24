@@ -224,7 +224,7 @@ export class ChatGptHelper implements GeneratorHelperInterface {
       console.log(`\nHeading : ${heading.title}  ...'\n`)
     }
     const response = await this.sendRequest(getPromptForHeading(this.postPrompt.tone, heading.title, heading.keywords, heading.context), this.completionParams)
-    return `${extractCodeBlock(response.text)}\n`
+    return `${extractCodeBlock(response.text)}\n<!--keywords:${heading.keywords}-->\n`
   }
 
   async generateCustomPrompt (customPrompt : string) {

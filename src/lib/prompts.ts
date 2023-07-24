@@ -1,8 +1,9 @@
 import { PostPrompt } from '../types'
 
-const STRUCTURE_OUTLINE = `Generate a new blog post outline based on these HTML headings from the top 10 search engine results for the title "{{TITLE}}". Ensure that the outline covers the topic comprehensively. 
+const STRUCTURE_OUTLINE = `Generate a new blog post outline based on the most important HTML headings from these search engine results for the query "{{TITLE}}". Ensure that the outline covers the topic comprehensively, using no more than 10 main headings.
 
-Headings: {{SERP_RESULTS}}
+Headings:
+{{SERP_RESULTS}}
 
 Return the outline in the following json format: {
   "title": "{{TITLE}}",
@@ -55,7 +56,7 @@ export function getPromptForOutline (postPrompt : PostPrompt) {
   const { country, intent, audience, serp_outlines } = postPrompt
   const outline = STRUCTURE_OUTLINE.replaceAll('{{TITLE}}', postPrompt.topic).replaceAll('{{SERP_RESULTS}}', serp_outlines);
   const prompt = outline +
-    ' Do not add heading for an introduction, conclusion or to summarize the article.' +
+    ' Do not add heading for an introduction, conclusion or to summarize the article. ' +
     (country === null || country === 'none' ? '' : 'Market/country/region :' + country + '.') +
     (audience === null ? '' : 'Audience : ' + audience + '.') +
     (intent === null ? '' : 'Content intent : ' + intent + '.')
@@ -124,14 +125,14 @@ function getPromptForInformativeHeading (title : string, keywords : string[] | n
   const promptAboutKeywords = keywords ? 'Keywords: ' + keywords.join(', ') + '.' : ''
   return promptAboutKeywords + promptAboutContext + ' Write informative content for the heading (without the heading) : "' + title + '". ' +
     'Do not start the first sentence with the heading. Instead, start with a sentence that introduces and provides context for the heading.' +
-    'Do not add a conclusion or a summary at the end of your answer. Your response should be in the markdown format.'
+    'Do not add a conclusion or a summary at the end of your answer. Your response should be in the markdown format. Use **double asterisks** to create bold text to highlight important phrases and entities.'
 }
 
 function getPromptForCaptivatingHeading (title : string, keywords : string[] | null, context : string | null) {
   const promptAboutContext = context ? context + ' ' : ''
-  const promptAboutKeywords = keywords ? 'Keywords: ' + keywords.join(', ') + '.' : ''
-  return promptAboutKeywords + promptAboutContext + ' Write captivating content for the heading (without the heading) : "' + title + '". ' +
+  const promptAboutKeywords = keywords ? 'Keywords: ' + keywords.join(', ') + '. ' : ' '
+  return promptAboutKeywords + promptAboutContext + '\n Write captivating content for the heading (without the heading) : "' + title + '". ' +
   'Provide in-depth information and valuable insights. Use clear and concise language, along with relevant examples or anecdotes, to engage the reader and enhance their understanding. ' +
   'Do not start the first sentence with the heading. Instead, start with a sentence that introduces and provides context for the heading. ' +
-  'Do not add a conclusion or a summary at the end of your answer. Your response should be in the markdown format.'
+  'Do not add a conclusion or a summary at the end of your answer. Your response should be in the markdown format. Use **double asterisks** to create bold text to highlight important phrases and entities.'
 }
