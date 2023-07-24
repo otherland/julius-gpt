@@ -1,9 +1,9 @@
 import * as dotenv from 'dotenv'
 import { readFile as rd } from 'fs'
 import { promisify } from 'util'
-import { ChatGPTAPI, ChatMessage, SendMessageOptions } from 'chatgpt'
-import pRetry, { AbortError } from 'p-retry'
-import { extractJsonArray, extractCodeBlock, extractPostOutlineFromCodeBlock, extractSeoInfo } from './extractor'
+import { ChatGPTAPI, ChatGPTError, ChatMessage, SendMessageOptions } from 'chatgpt'
+import pRetry, { AbortError, FailedAttemptError } from 'p-retry'
+import { extractJsonArray, extractCodeBlock, extractPostOutlineFromCodeBlock, extractSeoInfo, extractAudienceIntentInfo } from './extractor'
 import {
   getPromptForMainKeyword,
   getPromptForOutline,
@@ -13,7 +13,8 @@ import {
   getAutoSystemPrompt,
   getPromptForSeoInfo,
   getCustomSystemPrompt,
-  getSeoSystemPrompt
+  getSeoSystemPrompt,
+  getPromptForIntentAudience as getPromptForAudienceIntent
 } from './prompts'
 import {
   Heading,
@@ -26,6 +27,7 @@ import {
 import { encode } from './tokenizer'
 import { extractPrompts } from './template'
 import { log } from 'console'
+import { NoApiKeyError } from './errors'
 
 dotenv.config()
 
@@ -80,6 +82,9 @@ export class ChatGptHelper implements GeneratorHelperInterface {
     total: 0
   }
 
+  // -----------------------------------------------
+  // CONSTRUCTOR AND INITIALIZATION
+  // -----------------------------------------------
   public constructor (postPrompt : PostPrompt) {
     this.postPrompt = postPrompt
   }
@@ -110,14 +115,18 @@ export class ChatGptHelper implements GeneratorHelperInterface {
   }
 
   private async buildChatGPTAPI (systemMessage : string) {
-    this.api = new ChatGPTAPI({
-      apiKey: this.postPrompt?.apiKey || process.env.OPENAI_API_KEY,
-      completionParams: {
-        model: this.postPrompt.model
-      },
-      systemMessage,
-      debug: this.postPrompt.debugapi
-    })
+    try {
+      this.api = new ChatGPTAPI({
+        apiKey: this.postPrompt?.apiKey || process.env.OPENAI_API_KEY,
+        completionParams: {
+          model: this.postPrompt.model
+        },
+        systemMessage,
+        debug: this.postPrompt.debugapi
+      })
+    } catch (error) {
+      throw new NoApiKeyError()
+    }
 
     if (this.postPrompt.debug) {
       console.log(`OpenAI API initialized with model : ${this.postPrompt.model}`)
@@ -152,6 +161,9 @@ export class ChatGptHelper implements GeneratorHelperInterface {
     }
   }
 
+  // -----------------------------------------------
+  // METHODS FOR THE AUTOMATIC MODE
+  // -----------------------------------------------
   async generateMainKeyword () {
     const prompt = getPromptForMainKeyword()
     if (this.postPrompt.debug) {
@@ -168,13 +180,21 @@ export class ChatGptHelper implements GeneratorHelperInterface {
   }
 
   async generateContentOutline () {
+    if (this.postPrompt.generate) {
+      const audienceIntent = await this.generateAudienceIntent()
+      this.postPrompt = {
+        ...audienceIntent,
+        ...this.postPrompt
+      }
+    }
+
     const prompt = getPromptForOutline(this.postPrompt)
     if (this.postPrompt.debug) {
       console.log('---------- PROMPT OUTLINE ----------')
       console.log(prompt)
     }
     // the parent message is the outline for the upcoming content
-    // By this way, we can mimize the cost of the API call by minimising the number of prompt tokens
+    // By this way, we can decrease the cost of the API call by minimizing the number of prompt tokens
     // TODO : add an option to disable this feature
     this.chatParentMessage = await this.sendRequest(prompt)
     if (this.postPrompt.debug) {
@@ -183,6 +203,21 @@ export class ChatGptHelper implements GeneratorHelperInterface {
     }
 
     return extractPostOutlineFromCodeBlock(this.chatParentMessage.text)
+  }
+
+  async generateAudienceIntent () {
+    const prompt = getPromptForAudienceIntent(this.postPrompt)
+    if (this.postPrompt.debug) {
+      console.log('---------- PROMPT AUDIENCE INTENT ----------')
+      console.log(prompt)
+    }
+    const response = await this.sendRequest(prompt)
+    if (this.postPrompt.debug) {
+      console.log('---------- AUDIENCE INTENT ----------')
+      console.log(response.text)
+    }
+
+    return extractAudienceIntentInfo(response.text)
   }
 
   async generateIntroduction () {
@@ -201,7 +236,7 @@ export class ChatGptHelper implements GeneratorHelperInterface {
     return await this.buildContent(postOutline.headings, headingLevel)
   }
 
-  async buildContent (headings: Heading[], headingLevel : number, previousContent: string = ''): Promise<string> {
+  private async buildContent (headings: Heading[], headingLevel : number, previousContent: string = ''): Promise<string> {
     if (headings.length === 0) {
       return previousContent
     }
@@ -219,7 +254,7 @@ export class ChatGptHelper implements GeneratorHelperInterface {
     return this.buildContent(remainingHeadings, headingLevel, content)
   }
 
-  async getContent (heading: Heading): Promise<string> {
+  private async getContent (heading: Heading): Promise<string> {
     if (this.postPrompt.debug) {
       console.log(`\nHeading : ${heading.title}  ...'\n`)
     }
@@ -227,21 +262,44 @@ export class ChatGptHelper implements GeneratorHelperInterface {
     return `${extractCodeBlock(response.text)}\n<!--keywords:${heading.keywords}-->\n`
   }
 
+  // -----------------------------------------------
+  // METHODS FOR THE CUSTOM MODE base on a template
+  // -----------------------------------------------
+
+  /**
+   * Generate a content based on one of prompt defined in the template
+   * @param customPrompt :  the prompt defined in the template
+   * @returns the AI answer
+   */
   async generateCustomPrompt (customPrompt : string) {
     this.chatParentMessage = await this.sendRequest(customPrompt, this.completionParams)
     return extractCodeBlock(this.chatParentMessage.text)
   }
 
+  /**
+   * Generate the SEO info for the post based on the template
+   * @returns the SEO info
+   */
   async generateSeoInfo (): Promise<SeoInfo> {
     const systemPrompt = getSeoSystemPrompt(this.postPrompt)
     await this.buildChatGPTAPI(systemPrompt)
 
     this.chatParentMessage = await this.sendRequest(getPromptForSeoInfo(this.postPrompt), this.completionParams)
-    log('---------- SEO INFO ----------')
-    console.log(this.chatParentMessage.text)
+    if (this.postPrompt.debug) {
+      log('---------- SEO INFO ----------')
+      console.log(this.chatParentMessage.text)
+    }
     return extractSeoInfo(this.chatParentMessage.text)
   }
 
+  private async readTemplate () : Promise<string> {
+    const templatePath = this.postPrompt.templateFile
+    return await readFile(templatePath, 'utf-8')
+  }
+
+  // -----------------------------------------------
+  // SEND REQUEST TO OPENAI API
+  // -----------------------------------------------
   private async sendRequest (prompt : string, completionParams? : CompletionParams) {
     return await pRetry(async () => {
       const options : SendMessageOptions = { parentMessageId: this.chatParentMessage?.id }
@@ -257,21 +315,33 @@ export class ChatGptHelper implements GeneratorHelperInterface {
     }, {
       retries: 10,
       onFailedAttempt: async (error) => {
-        if (this.postPrompt.debug) {
-          console.log('---------- OPENAI REQUEST ERROR ----------')
-          console.log(error)
-        }
-        if (error instanceof AbortError) {
-          console.log('OpenAI API - Request aborted')
-        } else {
-          console.log(`OpenAI API - Request failed - Attempt ${error.attemptNumber} failed. There are ${error.retriesLeft} retries left.`)
-        }
+        this.manageError(error)
       }
     })
   }
 
-  private async readTemplate () : Promise<string> {
-    const templatePath = this.postPrompt.templateFile
-    return await readFile(templatePath, 'utf-8')
+  private manageError (error: FailedAttemptError) {
+    if (this.postPrompt.debug) {
+      console.log('---------- OPENAI REQUEST ERROR ----------')
+      console.log(error)
+    }
+    if (error instanceof ChatGPTError) {
+      const chatGPTError = error as ChatGPTError
+      if (chatGPTError.statusCode === 401) {
+        console.log('OpenAI API Error : Invalid API key: please check your API key in the option -k or in the OPENAI_API_KEY env var.')
+        process.exit(1)
+      }
+      if (chatGPTError.statusCode === 404) {
+        console.log(`OpenAI API Error :  Invalid model for your OpenAI subscription. Check if you can use : ${this.postPrompt.model}.`)
+        console.log(this.postPrompt.model === 'gpt-4' || this.postPrompt.model === 'gpt-4-32k' ? 'You need to join the waiting list to use the GPT-4 API : https://openai.com/waitlist/gpt-4-api' : '')
+        process.exit(1)
+      }
+    }
+
+    if (error instanceof AbortError) {
+      console.log(`OpenAI API - Request aborted. ${error.message}`)
+    } else {
+      console.log(`OpenAI API - Request failed - Attempt ${error.attemptNumber} failed. There are ${error.retriesLeft} retries left. ${error.message}`)
+    }
   }
 }

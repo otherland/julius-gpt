@@ -5,14 +5,15 @@ export type TotalTokens = {
 }
 
 export type PostPrompt = {
-  topic : string
+  topic? : string
   country? : string
   intent? : string
   audience? : string
-  language? : string
+  language: string
   tone? : 'informative' | 'captivating'
+  generate? : boolean // generate the audience and intent
   withConclusion? : boolean
-  model : 'gpt-4' | 'gpt-3.5-turbo',
+  model : 'gpt-4' | 'gpt-4-32k' | 'gpt-3.5-turbo' | 'gpt-3.5-turbo-16k',
   maxModelTokens? : 4000 | 8000,
   temperature? : number
   frequencyPenalty? : number
@@ -22,7 +23,7 @@ export type PostPrompt = {
   debugapi? : boolean
   apiKey? : string
   enrichOutline? : (outline: any, str: string) => any;
-
+  filename? : string
   // The following attributes are only used for custom templates
   templateFile? : string
   templateContent? : string
@@ -56,7 +57,13 @@ export type Post = {
 }
 
 export type SeoInfo = {
+  h1 : string
   slug : string
   seoTitle : string
   seoDescription : string
+}
+
+export type AudienceIntentInfo = {
+  audience : string
+  intent : string
 }
